@@ -85,8 +85,14 @@ namespace RabbitMq
 
         private void FinishChannel()
         {
-            _channel?.Close();
-            _channel?.Dispose();
+            try
+            {
+                _channel?.Close();
+                _channel?.Dispose();
+            }
+            catch (Exception)
+            {
+            }
         }
 
         private IModel PrepareChannel()
