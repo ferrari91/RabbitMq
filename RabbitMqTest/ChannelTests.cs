@@ -1,10 +1,6 @@
 ﻿using Moq;
-using Polly;
 using RabbitMq;
 using RabbitMQ.Client;
-using RabbitMQ.Client.Exceptions;
-using System.Net.Sockets;
-using Xunit;
 
 namespace RabbitMqTests
 {
