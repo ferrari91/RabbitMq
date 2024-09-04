@@ -83,6 +83,8 @@ namespace RabbitMq
             }
         }
 
+        // Revisar o RecorvedChannel do RabbitMQ está dando falha e perdendo registro
+        // 'RabbitMQ.Client.Impl.AutorecoveringModel'.
         private void FinishChannel()
         {
             try
