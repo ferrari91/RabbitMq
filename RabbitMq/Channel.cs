@@ -70,8 +70,6 @@ namespace RabbitMq
                     return _channel;
                 }
 
-                FinishChannel();
-
                 _channel = PrepareChannel();
 
                 if (!IsChannelOpen)
@@ -83,18 +81,10 @@ namespace RabbitMq
             }
         }
 
-        // Revisar o RecorvedChannel do RabbitMQ está dando falha e perdendo registro
-        // 'RabbitMQ.Client.Impl.AutorecoveringModel'.
         private void FinishChannel()
         {
-            try
-            {
-                _channel?.Close();
-                _channel?.Dispose();
-            }
-            catch (Exception)
-            {
-            }
+            _channel?.Close();
+            _channel?.Dispose();
         }
 
         private IModel PrepareChannel()

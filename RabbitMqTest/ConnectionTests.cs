@@ -2,7 +2,7 @@
 using RabbitMq;
 using RabbitMQ.Client;
 
-namespace RabbitMqTest
+namespace RabbitMqTests
 {
     public class ConnectionTests
     {

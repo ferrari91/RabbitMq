@@ -5,7 +5,7 @@ VisualStudioVersion = 17.9.34728.123
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RabbitMq", "RabbitMq\RabbitMq.csproj", "{8D41EC06-F921-4AF9-8053-77C895497619}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RabbitMqTest", "RabbitMqTest\RabbitMqTest.csproj", "{D032EEA5-089B-467D-9923-564A335C12C4}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RabbitMqTests", "RabbitMqTest\RabbitMqTests.csproj", "{D032EEA5-089B-467D-9923-564A335C12C4}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RabbitMQ-Api", "RabbitMQ-Api\RabbitMQ-Api.csproj", "{5C916C51-78F3-4DAE-816A-5A6DABF6685A}"
 EndProject
