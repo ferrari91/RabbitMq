@@ -116,12 +116,14 @@ RabbitMQ-Sdk
 ### Api com RabbitMq Integrado
 
 - **Soluction**
+<br>
 ![Apresentação da Soluction](images/soluction.png)
   - Definição
     - Consumer ( Classe de Subscriber do RabbitMQ )
     - Controller ( Controladora )
     - Model ( Modelo utilizado no Consumer/Publisher )
     - Static ( Configuração estatica - flag )
+    - Publisher ( Clsse de Publicar no Queue do RabbitMQ )
 - **Swagger**
 ![Apresentação da Soluction](images/api.png)
   - Definição
