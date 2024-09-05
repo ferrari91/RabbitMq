@@ -115,9 +115,9 @@ RabbitMQ-Sdk
 
 ### Api com RabbitMq Integrado
 
-- **Soluction**
-<br>
+
 ![Apresentação da Soluction](images/soluction.png)
+- **Soluction**
   - Definição
     - Consumer ( Classe de Subscriber do RabbitMQ )
     - Controller ( Controladora )
