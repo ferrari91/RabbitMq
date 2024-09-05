@@ -2,6 +2,7 @@ using Microsoft.OpenApi.Models;
 using RabbitMq;
 using RabbitMQ_Api.Consumer;
 using RabbitMQ_Api.Publisher;
+using System.Reflection;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,13 +21,13 @@ builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo
     {
-        Title = "My API",
+        Title = "RabbitMQ - API",
         Version = "v1",
         Description = "API documentation for RabbitMQ integration example",
         Contact = new OpenApiContact
         {
-            Name = "Support Team",
-            Email = "support@example.com",
+            Name = "Fernando Ferrari",
+            Email = "ferrari.cf91@outlook.com",
         }
     });
 });
