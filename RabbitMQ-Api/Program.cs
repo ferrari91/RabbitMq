@@ -1,6 +1,7 @@
 using Microsoft.OpenApi.Models;
 using RabbitMq;
 using RabbitMQ_Api.Consumer;
+using RabbitMQ_Api.Publisher;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,9 +10,9 @@ builder.Services.AddControllers();
 
 // Configuração do RabbitMQ e injeção de dependências
 builder.Services.AddRabbitMq("localhost", "/", 5672, "guest", "guest", false)
-    .AddSingleton<PublisherConsumer>();
+    .AddSingleton<MyModelPublisher>();
  
-builder.Services.AddHostedService<Consumer>();
+builder.Services.AddHostedService<MyModelConsumer>();
 
 // Configuração do Swagger
 builder.Services.AddEndpointsApiExplorer();

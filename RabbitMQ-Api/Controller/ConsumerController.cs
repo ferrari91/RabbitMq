@@ -1,6 +1,9 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using RabbitMq;
 using RabbitMQ_Api.Consumer;
+using RabbitMQ_Api.Model;
+using RabbitMQ_Api.Publisher;
+using RabbitMQ_Api.Statics;
 
 namespace RabbitMQ_Api.Controller
 {
@@ -8,25 +11,10 @@ namespace RabbitMQ_Api.Controller
     [ApiController]
     public class ConsumerController : ControllerBase
     {
-        [HttpGet]
-        public async Task<ActionResult> Get()
-        {
-            await Task.CompletedTask;
-            return Ok();
-        }
-
-        [HttpPost]
-        public async Task<IActionResult> Post([FromServices] PublisherConsumer publisher, [FromBody] ConsumerModel body)
-        {
-            try
-            {
-                await publisher.Publish(body, null, CancellationToken.None);
-                return Ok();
-            }
-            catch (Exception)
-            {
-                throw;
-            }
-        }
+        [HttpPost("publisher")]
+        public async Task Post([FromServices] MyModelPublisher publisher, [FromBody] string name) => await publisher.Publish(new MyModel(name), null, CancellationToken.None);
+        
+        [HttpPut("change-flag")]
+        public void Put([FromBody] bool flag) => Define.ShouldThrow = flag;
     }
 }
