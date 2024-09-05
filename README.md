@@ -35,12 +35,11 @@ RabbitMQ-Sdk
     ```bash
     docker run -d --name rabbitmq-server -p 5672:5672 -p 15672:15672 -v rabbitmq_data:/var/lib/rabbitmq my-rabbitmq
     ```
-  - **Sugestão** - [Docker Desktop ](https://www.docker.com/products/docker-desktop/)
-<br>
 - **Windows**
   - Consulte a [documentação oficial](https://www.rabbitmq.com/docs/install-windows) para orientações detalhadas sobre a instalação do RabbitMQ no Windows.
   - A documentação fornece informações sobre requisitos de sistema, opções de configuração e passos de instalação.
 
+- **Sugestão** - [Docker Desktop ](https://www.docker.com/products/docker-desktop/)
 <br>
 
 ### Implementação do Sdk
