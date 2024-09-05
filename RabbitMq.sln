@@ -9,6 +9,17 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RabbitMqTests", "RabbitMqTe
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RabbitMQ-Api", "RabbitMQ-Api\RabbitMQ-Api.csproj", "{5C916C51-78F3-4DAE-816A-5A6DABF6685A}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{BA687E1D-601D-4FE4-A240-A0353EC27058}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{8315BF9C-AFCB-4888-8923-B30BE7D7C21F}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "api", "api", "{EAEB4B14-FBFB-4148-8B7F-C4172F1B251B}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "docker", "docker", "{803B6BD8-D017-4E0B-B6DC-E61709451DF2}"
+	ProjectSection(SolutionItems) = preProject
+		..\..\..\Desktop\RabbitMQ\Dockerfile = ..\..\..\Desktop\RabbitMQ\Dockerfile
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -30,6 +41,11 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{8D41EC06-F921-4AF9-8053-77C895497619} = {BA687E1D-601D-4FE4-A240-A0353EC27058}
+		{D032EEA5-089B-467D-9923-564A335C12C4} = {8315BF9C-AFCB-4888-8923-B30BE7D7C21F}
+		{5C916C51-78F3-4DAE-816A-5A6DABF6685A} = {EAEB4B14-FBFB-4148-8B7F-C4172F1B251B}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {9F116B43-8F55-4D8E-9DE9-8719FB0ACEC3}
