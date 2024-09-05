@@ -8,7 +8,7 @@ RabbitMQ-Sdk
 - Extra: `Dockerfile`
 
 
-![Apresentação da Soluction](images/soluction.png)
+![Apresentação da Soluction](images/explorer.png)
 
 ## Instalação e Dependência
 - RabbitMQ.Client
