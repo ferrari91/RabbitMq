@@ -1,6 +1,7 @@
 using Microsoft.OpenApi.Models;
 using RabbitMq;
 using RabbitMQ_Api.Consumer;
+using RabbitMQ_Api.Model;
 using RabbitMQ_Api.Publisher;
 using System.Reflection;
 
@@ -11,7 +12,7 @@ builder.Services.AddControllers();
 
 // Configuração do RabbitMQ e injeção de dependências
 builder.Services.AddRabbitMq("localhost", "/", 5672, "guest", "guest", false)
-    .AddSingleton<MyModelPublisher>();
+    .AddSingleton<IMyModelPublisher<MyModel>, MyModelPublisher>();
  
 builder.Services.AddHostedService<MyModelConsumer>();
 

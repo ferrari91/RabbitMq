@@ -10,7 +10,7 @@ namespace RabbitMQ_Api.Controller
     public class ConsumerController : ControllerBase
     {
         [HttpPost("publisher")]
-        public async Task Post([FromServices] MyModelPublisher publisher, [FromBody] string name) => await publisher.Publish(new MyModel(name), null, CancellationToken.None);
+        public async Task Post([FromServices] IMyModelPublisher<MyModel> publisher, [FromBody] string name) => await publisher.Publish(new MyModel(name), null, CancellationToken.None);
 
         [HttpPut("change-flag")]
         public void Put([FromQuery] bool flag) => Define.ShouldThrow = flag;

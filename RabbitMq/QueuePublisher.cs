@@ -79,6 +79,8 @@ namespace RabbitMq
 
         private void CreateChannel()
         {
+            _connection.PrepareConnection();
+
             channel = _connection.CreateChannel();
 
             var exchange = $"{QueueName}-ex";
