@@ -5,10 +5,13 @@ namespace RabbitMQ_Api.Publisher
 {
     public class MyModelPublisher : QueuePublisher<MyModel>, IMyModelPublisher<MyModel>
     {
-        public MyModelPublisher(IServiceProvider services) : base(services)
+        public MyModelPublisher(Connection connection) : base(connection)
         {
         }
 
-        protected override string QueueName => "my-consumer";
+        protected override string Queue => "my-consumer";
+
+        public async Task Publish(MyModel model, Dictionary<string, object> headers, CancellationToken ctx)
+            => await PublishAsync(model, headers, ctx).ConfigureAwait(true);
     }
 }

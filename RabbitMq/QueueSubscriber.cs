@@ -1,224 +1,248 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Newtonsoft.Json;
-using Polly;
-using RabbitMq.Constants;
-using RabbitMq.Extensions;
-using RabbitMQ.Client;
-using RabbitMQ.Client.Events;
-using RabbitMQ.Client.Exceptions;
 using System.Text;
 using System.Transactions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Newtonsoft.Json;
+using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
+using RabbitMq.Extensions;
 
 namespace RabbitMq
 {
     public abstract class QueueSubscriber<TModel> : BackgroundService where TModel : class
+{
+    private readonly IServiceProvider _serviceProvider;
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly Connection _connection;
+
+    private Channel? _delayedChannel;
+    private Channel? _deadChannel;
+    private Channel? _mainChannelWrapper;
+
+    protected abstract string Queue { get; }
+    protected abstract string DelayedQueue { get; }
+    protected abstract string DeadQueue { get; }
+
+    protected virtual int RetryAttempts => 3;
+    protected virtual int RetryDelaySeconds => 10;
+
+    /// <summary>
+    /// If true, wraps ProcessMessage in an ambient TransactionScope.
+    /// Prefer local DB transaction for maximum performance.
+    /// </summary>
+    protected virtual bool UseTransactionScope => false;
+
+    protected virtual int PrefetchCount => 32;
+
+    // Header key padronizada
+    protected virtual string AttemptHeaderKey => "attempt";
+
+    protected QueueSubscriber(IServiceProvider serviceProvider, Connection connection)
     {
-        private readonly IServiceScope _scope;
-        private readonly IServiceProvider _serviceProvider;
+        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+        _scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
+        _connection = connection ?? throw new ArgumentNullException(nameof(connection));
+    }
 
-        private readonly Channel _delayedChannel;
-        private readonly Channel _deadChannel;
+    protected abstract Task ProcessMessage(IServiceProvider scopedProvider, MessageContext<TModel> context, CancellationToken ct);
+    
+    protected virtual Task OnMessageFailedAsync(
+        IServiceProvider scopedProvider,
+        MessageContext<TModel>? context,
+        Exception exception,
+        int attempt,
+        CancellationToken ct)
+    {
+        return Task.CompletedTask;
+    }
 
-        protected abstract string Queue { get; }
-        protected abstract string DelayedQueue { get; }
-        protected abstract string DeadQueue { get; }
-
-        protected virtual int RetryAttempts => 3;
-        protected virtual int RetryDelay => 10;
-        protected virtual bool UseTransactionScope { get; } = false;
-
-        public QueueSubscriber(IServiceProvider serviceProvider)
-        {
-            _scope = serviceProvider.CreateScope();
-            _serviceProvider = _scope.ServiceProvider;
-
-            var connection = serviceProvider.GetRequiredService<Connection>();
-
-            _delayedChannel = new Channel(
-                connection: connection,
-                queueName: DelayedQueue,
-                exchangeName: $"{DelayedQueue}-ex",
-                routingKey: $"{DelayedQueue}-key",
-                exchangeType: ExchangeType.Direct,
-                retryChannelCount: RetryAttempts,
-                retryChannelDelayInSeconds: RetryDelay,
-                exchangeArguments: new Dictionary<string, object>
-                {
-                    [ConstantsHeader.TypeDelayed] = ExchangeType.Direct
-                },
-                queueArguments: new Dictionary<string, object>
-                {
-                    { ConstantsHeader.ExchangeDeadLetter, string.Empty },
-                    { ConstantsHeader.ExchangeDeadRoutingKey, Queue }
-                },
-                bindArguments: null
-                );
-
-            _deadChannel = new Channel(
-                connection: connection,
-                queueName: DeadQueue,
-                exchangeName: $"{DeadQueue}-ex",
-                routingKey: $"{DeadQueue}-key",
-                exchangeType: ExchangeType.Direct,
-                retryChannelCount: RetryAttempts,
-                retryChannelDelayInSeconds: RetryDelay,
-                exchangeArguments: null,
-                queueArguments: new Dictionary<string, object>
-                {
-                    [ConstantsHeader.ExchangeDeadLetter] = $"{DeadQueue}-ex"
-                },
-                bindArguments: null
-                );
-        }
-
-        protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-        {
-            await Policy
-            .Handle<OperationInterruptedException>()
-            .RetryForeverAsync((exception, context, attempt) =>
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        // init delayed/dead channels now (derived already built)
+        _delayedChannel = new Channel(
+            connection: _connection,
+            queueName: DelayedQueue,
+            exchangeName: $"{DelayedQueue}-ex",
+            routingKey: $"{DelayedQueue}-key",
+            exchangeType: ExchangeType.Direct,
+            retryChannelCount: 3,
+            retryChannelDelayInSeconds: 3,
+            queueArguments: new Dictionary<string, object>
             {
-                Task.Delay(TimeSpan.FromSeconds(3)).Wait();
-            })
-            .ExecuteAsync(async () =>
-            {
-                using (var connection = _serviceProvider.GetRequiredService<Connection>())
-                {
-                    connection.PrepareConnection();
-                    using (var channel = connection.CreateChannel())
-                    {
-                        var exchange = $"{Queue}-ex";
-                        var routing = $"{Queue}-key";
-
-                        channel.ExchangeDeclare(exchange, ExchangeType.Fanout, true, false);
-                        channel.QueueDeclare(queue: Queue, durable: true, exclusive: false, autoDelete: false);
-                        channel.QueueBind(queue: Queue, exchange: exchange, routingKey: routing);
-
-                        var consumer = new AsyncEventingBasicConsumer(channel);
-                        consumer.Received += OnMessageReceived;
-
-                        channel.BasicQos(0, 1, false);
-                        channel.BasicConsume(queue: Queue, autoAck: false, consumer: consumer);
-
-                        while (!stoppingToken.IsCancellationRequested)
-                            await Task.Delay(TimeSpan.FromSeconds(120), stoppingToken);
-
-                        channel.Close();
-                        channel.Dispose();
-                        connection.Dispose();
-
-                        async Task OnMessageReceived(object sender, BasicDeliverEventArgs @event)
-                        {
-                            using var scope = _serviceProvider.CreateScope();
-                            using var transaction = UseTransactionScope ? new TransactionScope(TransactionScopeAsyncFlowOption.Enabled) : default;
-                            int attempt = 0;
-                            IDictionary<string, object> headers = null;
-                            TModel model;
-                            Context<TModel> context = default;
-
-                            try
-                            {
-                                var body = @event.Body.ToArray();
-                                var contentType = @event.BasicProperties.ContentType;
-                                try
-                                {
-                                    (attempt, headers) = @event.BasicProperties.GetHeader();
-
-                                    model = DeserializeMessage(Encoding.UTF8.GetString(body), headers);
-                                    context = new Context<TModel>(scope.ServiceProvider, model, @event.BasicProperties.Headers);
-                                }
-                                catch
-                                {
-                                    ToDead(contentType, headers, body);
-                                    channel.BasicAck(@event.DeliveryTag, false);
-                                    throw;
-                                }
-
-                                try
-                                {
-                                    await ProcessMessage(scope.ServiceProvider, context, stoppingToken);
-                                    transaction?.Complete();
-                                }
-                                catch (Exception exception)
-                                {
-                                    if (++attempt <= RetryAttempts)
-                                        ToDelayed(contentType, headers, body, attempt);
-                                    else
-                                        ToDead(contentType, headers, body);
-
-                                    ExceptionExecute(scope.ServiceProvider, exception, context, attempt, stoppingToken);
-                                }
-                                finally
-                                {
-                                    channel.BasicAck(@event.DeliveryTag, false);
-                                }
-                            }
-                            catch (Exception exception)
-                            {
-                                transaction?.Dispose();
-                                ExceptionExecute(scope.ServiceProvider, exception, context, attempt, stoppingToken);
-                            }
-                        }
-                    }
-                }
+                ["x-dead-letter-exchange"] = $"{Queue}-ex",
+                ["x-dead-letter-routing-key"] = $"{Queue}-key"
             });
-        }
 
-        protected abstract Task ProcessMessage(IServiceProvider serviceProvider, Context<TModel> context, CancellationToken stoppingToken);
+        _deadChannel = new Channel(
+            connection: _connection,
+            queueName: DeadQueue,
+            exchangeName: $"{DeadQueue}-ex",
+            routingKey: $"{DeadQueue}-key",
+            exchangeType: ExchangeType.Direct,
+            retryChannelCount: 3,
+            retryChannelDelayInSeconds: 3);
 
-        private void ToDelayed(string contentType, IDictionary<string, object> headers, byte[] body, int attempt)
+        _mainChannelWrapper = new Channel(
+            connection: _connection,
+            queueName: Queue,
+            exchangeName: $"{Queue}-ex",
+            routingKey: $"{Queue}-key",
+            exchangeType: ExchangeType.Direct,
+            retryChannelCount: 3,
+            retryChannelDelayInSeconds: 3);
+
+        // IMPORTANTE: esse é o channel do consumo. ACK deve ser feito nele.
+        var consumerChannel = await _mainChannelWrapper.GetChannelAsync(stoppingToken).ConfigureAwait(false);
+
+        await consumerChannel.BasicQosAsync(
+            prefetchSize: 0,
+            prefetchCount: (ushort)PrefetchCount,
+            global: false,
+            cancellationToken: stoppingToken
+        ).ConfigureAwait(false);
+
+        var consumer = new AsyncEventingBasicConsumer(consumerChannel);
+
+        consumer.ReceivedAsync += async (_, ea) =>
         {
-            using (var channel = _delayedChannel.GetChannel())
+            // use sempre o consumerChannel para Ack/Nack
+            await OnMessageReceived(consumerChannel, ea, stoppingToken).ConfigureAwait(false);
+        };
+
+        await consumerChannel.BasicConsumeAsync(
+            queue: Queue,
+            autoAck: false,
+            consumer: consumer,
+            cancellationToken: stoppingToken
+        ).ConfigureAwait(false);
+
+        // mantém o BackgroundService vivo
+        await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken).ConfigureAwait(false);
+    }
+
+    private async Task OnMessageReceived(IChannel consumerChannel, BasicDeliverEventArgs ea, CancellationToken stoppingToken)
+    {
+        TModel? model = null;
+
+        try
+        {
+            var json = Encoding.UTF8.GetString(ea.Body.Span);
+            model = JsonConvert.DeserializeObject<TModel>(json);
+
+            if (model is null)
+                throw new InvalidOperationException("Mensagem inválida (JSON nulo).");
+
+            using var scope = _scopeFactory.CreateScope();
+
+            var (attempt, headers) = ea.BasicProperties.GetHeader();
+
+            var context = new MessageContext<TModel>
             {
-                var properties = channel.CreateBasicProperties();
-
-                properties.Persistent = true;
-                properties.ContentType = contentType;
-                properties.DeliveryMode = 2;
-                properties.CorrelationId = Guid.NewGuid().ToString();
-
-                properties.Headers = headers;   
-                var sleepInterval = TimeSpan.FromSeconds(10).TotalMilliseconds;
-
-                properties.Headers[ConstantsHeader.Attempt] = attempt;
-                properties.Headers[ConstantsHeader.HeaderMessageTTL] = (int)sleepInterval;
-
-                properties.Headers = headers.ConvertToBytes();
-                properties.Expiration = sleepInterval.ToString();
-
-                _delayedChannel.Publish(body, properties);
-            }
-        }
-
-        private void ToDead(string contentType, IDictionary<string, object> headers, byte[] body)
-        {
-            using (var channel = _deadChannel.GetChannel())
+                Model = model,
+                Headers = headers,
+                Attempt = attempt,
+                DeliveryTag = ea.DeliveryTag
+            };
+            
+            if (UseTransactionScope)
             {
-                var properties = channel.CreateBasicProperties();
+                using var tx = new TransactionScope(
+                    TransactionScopeOption.Required,
+                    new TransactionOptions { IsolationLevel = IsolationLevel.ReadCommitted },
+                    TransactionScopeAsyncFlowOption.Enabled);
 
-                properties.Persistent = true;
-                properties.ContentType = contentType;
-                properties.DeliveryMode = 2;
-                properties.CorrelationId = Guid.NewGuid().ToString();
-                properties.Headers = headers;
+                await ProcessMessage(scope.ServiceProvider, context, stoppingToken).ConfigureAwait(false);
 
-                properties.Headers = headers.ConvertToBytes();
-
-                _deadChannel.Publish(body, properties);
+                tx.Complete();
             }
+            else
+            {
+                await ProcessMessage(scope.ServiceProvider, context, stoppingToken).ConfigureAwait(false);
+            }
+
+            await consumerChannel.BasicAckAsync(
+                deliveryTag: ea.DeliveryTag,
+                multiple: false,
+                cancellationToken: stoppingToken
+            ).ConfigureAwait(false);
         }
-
-        protected virtual TModel DeserializeMessage(string rawMessage, IDictionary<string, object> headers = null)
+        catch (Exception ex)
         {
-            return JsonConvert.DeserializeObject<TModel>(rawMessage) ?? throw new Exception();
-        }
+            // attempt atual antes de incrementar (o HandleFailure incrementa)
 
-        protected abstract void ExceptionExecute(IServiceProvider provider, Exception exception, Context<TModel> context, int attempt, CancellationToken ctx);
+            var (attempt, headers) = ea.BasicProperties.GetHeader();
+            var nextAttempt = attempt + 1;
 
-        public override void Dispose()
-        {
-            _scope.Dispose();
-            base.Dispose();
+            var context = new MessageContext<TModel>
+            {
+                Model = model,
+                Headers = headers,
+                Attempt = nextAttempt,
+                DeliveryTag = ea.DeliveryTag
+            };
+            
+            // scope novo só para logging/telemetria/efeitos colaterais controlados
+            using var scope = _scopeFactory.CreateScope();
+
+            await OnMessageFailedAsync(
+                scopedProvider: scope.ServiceProvider,
+                context: context,
+                exception: ex,
+                attempt: nextAttempt,
+                ct: stoppingToken
+            ).ConfigureAwait(false);
+
+            await HandleFailureAsync(consumerChannel, ea, ex, stoppingToken).ConfigureAwait(false);
         }
     }
+    private async Task HandleFailureAsync(IChannel consumerChannel, BasicDeliverEventArgs ea, Exception ex, CancellationToken ct)
+    {
+        if (_delayedChannel is null) throw new InvalidOperationException("Delayed channel not initialized.");
+        if (_deadChannel is null) throw new InvalidOperationException("Dead channel not initialized.");
+
+        var (attempt, headers) = ea.BasicProperties.GetHeader();
+        var nextAttempt = attempt + 1;
+
+        headers[AttemptHeaderKey] = nextAttempt;
+
+        if (nextAttempt <= RetryAttempts)
+        {
+            // TTL por mensagem: Expiration (ms como string)
+            var delayMs = checked(RetryDelaySeconds * 1000);
+
+            var props = new BasicProperties
+            {
+                Persistent = true,
+                Headers = headers.ConvertToObject(),
+                Expiration = delayMs.ToString()
+            };
+
+            await _delayedChannel.BasicPublishAsync(ea.Body, props, ct).ConfigureAwait(false);
+
+            // ACK sempre no consumerChannel
+            await consumerChannel.BasicAckAsync(ea.DeliveryTag, multiple: false, cancellationToken: ct).ConfigureAwait(false);
+            return;
+        }
+
+        // dead-letter
+        {
+            var props = new BasicProperties
+            {
+                Persistent = true,
+                Headers = headers.ConvertToObject()
+            };
+
+            await _deadChannel.BasicPublishAsync(ea.Body, props, ct).ConfigureAwait(false);
+            await consumerChannel.BasicAckAsync(ea.DeliveryTag, multiple: false, cancellationToken: ct).ConfigureAwait(false);
+        }
+    }
+
+    public override void Dispose()
+    {
+        base.Dispose();
+        _ = _delayedChannel?.DisposeAsync();
+        _ = _deadChannel?.DisposeAsync();
+        _ = _mainChannelWrapper?.DisposeAsync();
+    }
+}
 }

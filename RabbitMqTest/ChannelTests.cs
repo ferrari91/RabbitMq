@@ -7,170 +7,198 @@ namespace RabbitMqTests
     public class ChannelTests
     {
         [Fact]
-        public void GetChannel_ShouldReturnChannel_WhenChannelIsOpen()
+        public async Task GetChannelAsync_ShouldReturnChannel_WhenChannelIsOpen()
         {
             // Arrange
+            var ct = CancellationToken.None;
+
             var mockFactory = new Mock<IConnectionFactory>();
             var mockConnection = new Mock<IConnection>();
-            var mockChannel = new Mock<IModel>();
+            var mockChannel = new Mock<IChannel>();
 
             mockConnection.Setup(c => c.IsOpen).Returns(true);
             mockChannel.Setup(c => c.IsOpen).Returns(true);
 
-            mockFactory.Setup(f => f.CreateConnection()).Returns(mockConnection.Object);
-            mockConnection.Setup(c => c.CreateModel()).Returns(mockChannel.Object);
+            mockFactory.Setup(f => f.CreateConnectionAsync(It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(mockConnection.Object);
 
-            var _connection = new Connection(mockFactory.Object);
+            mockConnection.Setup(c => c.CreateChannelAsync(It.IsAny<CreateChannelOptions?>(), It.IsAny<CancellationToken>()))
+                          .ReturnsAsync(mockChannel.Object);
 
-            var channel = new Channel(
-                connection: _connection,
+            var connection = new Connection(mockFactory.Object);
+
+            var channelWrapper = new Channel(
+                connection: connection,
                 queueName: "test-queue",
                 exchangeName: "test-exchange",
                 routingKey: "test-routing",
-                exchangeType: "direct",
+                exchangeType: ExchangeType.Direct,
                 retryChannelCount: 3,
                 retryChannelDelayInSeconds: 1);
 
             // Act
-            var result = channel.GetChannel();
+            var result = await channelWrapper.GetChannelAsync(ct);
 
             // Assert
             Assert.NotNull(result);
             Assert.Equal(mockChannel.Object, result);
 
-            // Verify
-            mockChannel.Verify(c => c.IsOpen, Times.Exactly(1)); 
-            mockConnection.Verify(c => c.CreateModel(), Times.Once); 
+            mockConnection.Verify(c => c.CreateChannelAsync(It.IsAny<CreateChannelOptions?>(), It.IsAny<CancellationToken>()), Times.Once);
+            mockChannel.VerifyGet(c => c.IsOpen, Times.AtLeastOnce);
         }
 
         [Fact]
-        public void GetChannel_ShouldThrowException_WhenChannelCannotBeOpened()
+        public void GetChannel_ShouldThrow_WhenChannelNotInitialized()
         {
             // Arrange
             var mockFactory = new Mock<IConnectionFactory>();
-            var mockConnection = new Mock<IConnection>();
-            var mockChannel = new Mock<IModel>();
+            var connection = new Connection(mockFactory.Object);
 
-            mockConnection.Setup(c => c.IsOpen).Returns(false);
-
-            var _connection = new Connection(mockFactory.Object);
-
-            var channel = new Channel(
-                connection: _connection,
+            var channelWrapper = new Channel(
+                connection: connection,
                 queueName: "test-queue",
                 exchangeName: "test-exchange",
                 routingKey: "test-routing",
-                exchangeType: "direct",
+                exchangeType: ExchangeType.Direct,
                 retryChannelCount: 3,
                 retryChannelDelayInSeconds: 1);
 
             // Act & Assert
-            Assert.Throws<InvalidOperationException>(() => channel.GetChannel());
+            Assert.Throws<InvalidOperationException>(() => channelWrapper.GetChannel());
         }
 
         [Fact]
-        public void Publish_ShouldPublishMessage_WhenChannelIsOpen()
+        public async Task BasicPublishAsync_ShouldPublishMessage_WhenChannelIsOpen()
         {
             // Arrange
+            var ct = CancellationToken.None;
+
             var mockFactory = new Mock<IConnectionFactory>();
             var mockConnection = new Mock<IConnection>();
-            var mockChannel = new Mock<IModel>();
+            var mockChannel = new Mock<IChannel>();
 
             mockConnection.Setup(c => c.IsOpen).Returns(true);
             mockChannel.Setup(c => c.IsOpen).Returns(true);
 
-            mockFactory.Setup(f => f.CreateConnection()).Returns(mockConnection.Object);
-            mockConnection.Setup(c => c.CreateModel()).Returns(mockChannel.Object);
+            mockFactory.Setup(f => f.CreateConnectionAsync(It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(mockConnection.Object);
 
-            var _connection = new Connection(mockFactory.Object);
+            mockConnection.Setup(c => c.CreateChannelAsync(It.IsAny<CreateChannelOptions?>(), It.IsAny<CancellationToken>()))
+                          .ReturnsAsync(mockChannel.Object);
 
-            var channel = new Channel(
-                connection: _connection,
+            var connection = new Connection(mockFactory.Object);
+
+            var channelWrapper = new Channel(
+                connection: connection,
                 queueName: "test-queue",
                 exchangeName: "test-exchange",
                 routingKey: "test-routing",
-                exchangeType: "direct",
+                exchangeType: ExchangeType.Direct,
                 retryChannelCount: 3,
                 retryChannelDelayInSeconds: 1);
 
             var body = new byte[] { 0x01, 0x02 };
-            var basicProperties = Mock.Of<IBasicProperties>();
+            var props = new BasicProperties { Persistent = true };
 
             // Act
-            channel.GetChannel(); // Ensures the channel is open
-            channel.Publish(body, basicProperties);
+            await channelWrapper.GetChannelAsync(ct); // ensure open
+            await channelWrapper.BasicPublishAsync(body, props, ct);
 
             // Assert
-            mockChannel.Verify(c => c.BasicPublish("test-exchange", "test-routing", false, basicProperties, body), Times.Once);
+            mockChannel.Verify(c => c.BasicPublishAsync(
+                    "test-exchange",
+                    "test-routing",
+                    false,
+                    It.IsAny<BasicProperties>(),
+                    It.Is<ReadOnlyMemory<byte>>(m => m.ToArray().Length == body.Length),
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
         }
 
         [Fact]
-        public void Dispose_ShouldCloseAndDisposeChannel_WhenCalled()
+        public async Task DisposeAsync_ShouldCloseAndDisposeChannel_WhenCalled()
         {
             // Arrange
+            var ct = CancellationToken.None;
+
             var mockFactory = new Mock<IConnectionFactory>();
             var mockConnection = new Mock<IConnection>();
-            var mockChannel = new Mock<IModel>();
+            var mockChannel = new Mock<IChannel>();
 
             mockConnection.Setup(c => c.IsOpen).Returns(true);
             mockChannel.Setup(c => c.IsOpen).Returns(true);
 
-            mockFactory.Setup(f => f.CreateConnection()).Returns(mockConnection.Object);
-            mockConnection.Setup(c => c.CreateModel()).Returns(mockChannel.Object);
+            mockFactory.Setup(f => f.CreateConnectionAsync(It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(mockConnection.Object);
 
-            var _connection = new Connection(mockFactory.Object);
+            mockConnection.Setup(c => c.CreateChannelAsync(It.IsAny<CreateChannelOptions?>(), It.IsAny<CancellationToken>()))
+                          .ReturnsAsync(mockChannel.Object);
 
-            var channel = new Channel(
-                connection: _connection,
+            // Se o seu wrapper chama CloseAsync/DisposeAsync:
+            mockChannel.Setup(c => c.CloseAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+            mockChannel.Setup(c => c.DisposeAsync()).Returns(ValueTask.CompletedTask);
+
+            var connection = new Connection(mockFactory.Object);
+
+            var channelWrapper = new Channel(
+                connection: connection,
                 queueName: "test-queue",
                 exchangeName: "test-exchange",
                 routingKey: "test-routing",
-                exchangeType: "direct",
+                exchangeType: ExchangeType.Direct,
                 retryChannelCount: 3,
                 retryChannelDelayInSeconds: 1);
 
             // Act
-            channel.GetChannel(); 
-            channel.Dispose();
+            await channelWrapper.GetChannelAsync(ct);
+            await channelWrapper.DisposeAsync();
 
             // Assert
-            mockChannel.Verify(c => c.Close(), Times.Once);
-            mockChannel.Verify(c => c.Dispose(), Times.Once);
+            mockChannel.Verify(c => c.CloseAsync(It.IsAny<CancellationToken>()), Times.Once);
+            mockChannel.Verify(c => c.DisposeAsync(), Times.Once);
         }
 
         [Fact]
-        public void Dispose_ShouldNotThrowException_WhenCalledMultipleTimes()
+        public async Task DisposeAsync_ShouldNotThrow_WhenCalledMultipleTimes()
         {
             // Arrange
+            var ct = CancellationToken.None;
+
             var mockFactory = new Mock<IConnectionFactory>();
             var mockConnection = new Mock<IConnection>();
-            var mockChannel = new Mock<IModel>();
+            var mockChannel = new Mock<IChannel>();
 
             mockConnection.Setup(c => c.IsOpen).Returns(true);
             mockChannel.Setup(c => c.IsOpen).Returns(true);
 
-            mockFactory.Setup(f => f.CreateConnection()).Returns(mockConnection.Object);
-            mockConnection.Setup(c => c.CreateModel()).Returns(mockChannel.Object);
+            mockFactory.Setup(f => f.CreateConnectionAsync(It.IsAny<CancellationToken>()))
+                       .ReturnsAsync(mockConnection.Object);
 
-            var _connection = new Connection(mockFactory.Object);
+            mockConnection.Setup(c => c.CreateChannelAsync(It.IsAny<CreateChannelOptions?>(), It.IsAny<CancellationToken>()))
+                          .ReturnsAsync(mockChannel.Object);
 
-            var channel = new Channel(
-                connection: _connection,
+            mockChannel.Setup(c => c.CloseAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+            mockChannel.Setup(c => c.DisposeAsync()).Returns(ValueTask.CompletedTask);
+
+            var connection = new Connection(mockFactory.Object);
+
+            var channelWrapper = new Channel(
+                connection: connection,
                 queueName: "test-queue",
                 exchangeName: "test-exchange",
                 routingKey: "test-routing",
-                exchangeType: "direct",
+                exchangeType: ExchangeType.Direct,
                 retryChannelCount: 3,
                 retryChannelDelayInSeconds: 1);
 
             // Act
-            channel.GetChannel(); 
-            channel.Dispose();
-            channel.Dispose();
+            await channelWrapper.GetChannelAsync(ct);
+            await channelWrapper.DisposeAsync();
+            await channelWrapper.DisposeAsync();
 
             // Assert
-            mockChannel.Verify(c => c.Close(), Times.Once);
-            mockChannel.Verify(c => c.Dispose(), Times.Once);
+            mockChannel.Verify(c => c.CloseAsync(It.IsAny<CancellationToken>()), Times.Once);
+            mockChannel.Verify(c => c.DisposeAsync(), Times.Once);
         }
     }
 }

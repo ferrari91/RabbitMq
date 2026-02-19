@@ -30,8 +30,7 @@ namespace RabbitMq
                 RequestedChannelMax = 2048,
                 UserName = user,
                 Password = passWord,
-                AutomaticRecoveryEnabled = true,
-                DispatchConsumersAsync = true
+                AutomaticRecoveryEnabled = true
             };
 
             if (ssl)

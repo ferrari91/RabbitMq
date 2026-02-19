@@ -11,7 +11,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 
 // Configuração do RabbitMQ e injeção de dependências
-builder.Services.AddRabbitMq("localhost", "/", 5672, "guest", "guest", false)
+builder.Services.AddRabbitMq("localhost", "/", 5672, "admin", "admin", false)
     .AddSingleton<IMyModelPublisher<MyModel>, MyModelPublisher>();
  
 builder.Services.AddHostedService<MyModelConsumer>();
